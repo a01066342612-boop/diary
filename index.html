@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>나의 그림일기장</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Gaegu:wght@400;700&family=Nanum+Pen+Script&family=Gamja+Flower&family=Hi+Melody&family=Jua&family=Dongle:wght@300;400;700&family=Single+Day&family=Nanum+Myeongjo:wght@400;700&family=Nanum+Gothic:wght@400;700&display=swap" rel="stylesheet">
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              'hand': ['"Gaegu"', 'cursive'],
+              'pen': ['"Nanum Pen Script"', 'cursive'],
+              'flower': ['"Gamja Flower"', 'cursive'],
+              'melody': ['"Hi Melody"', 'cursive'],
+              'jua': ['"Jua"', 'sans-serif'],
+              'dongle': ['"Dongle"', 'sans-serif'],
+              'single': ['"Single Day"', 'cursive'],
+              'myeongjo': ['"Nanum Myeongjo"', 'serif'],
+              'gulim': ['"Nanum Gothic"', 'sans-serif'],
+            },
+            colors: {
+              paper: '#fdfbf7',
+              grid: '#e5e7eb',
+              'grid-line': '#d1d5db',
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+      body {
+        background-color: #f3f4f6;
+        font-family: 'Gamja Flower', cursive;
+      }
+      /* Custom grid styles for the notebook feel */
+      .notebook-grid-cell {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid #9ca3af;
+      }
+      .notebook-grid-cell::after {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 0;
+        right: 0;
+        border-bottom: 1px dashed #d1d5db; /* Dotted midline */
+        z-index: 0;
+      }
+      .notebook-text {
+        z-index: 1;
+        position: relative;
+        top: -2px; /* Slight adjustment for font baseline */
+      }
+
+      @media print {
+        .no-print {
+          display: none !important;
+        }
+        body {
+          background-color: white !important;
+        }
+        #root {
+          padding: 0 !important;
+        }
+        /* Ensure background colors/images are printed */
+        * {
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+        /* Remove shadows and simplified styling for print */
+        .shadow-2xl {
+          box-shadow: none !important;
+        }
+        /* Ensure the diary is centered and full width */
+        main {
+          margin: 0;
+          padding: 0;
+          width: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.555.0",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.30.0"
+  }
+}
+</script>
+</head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
