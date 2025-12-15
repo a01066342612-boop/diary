@@ -53,36 +53,56 @@ const GridNotebook: React.FC<GridNotebookProps> = ({ text, rows, font }) => {
     displayCells.push({ char: '' });
   }
 
+  // Group cells into rows
+  const gridRows: { char: string, subChar?: string }[][] = [];
+  for (let i = 0; i < displayCells.length; i += GRID_COLS) {
+    gridRows.push(displayCells.slice(i, i + GRID_COLS));
+  }
+
   return (
-    <div className="w-full bg-white">
-      <div 
-        className="grid border-2 border-gray-800 bg-white" 
-        style={{ gridTemplateColumns: `repeat(${GRID_COLS}, minmax(0, 1fr))` }}
-      >
-        {displayCells.map((cell, index) => {
-          // Check alignment rules
-          // Standalone '.' and ',' go to bottom-left
-          const isDotOrComma = ['.', ','].includes(cell.char);
-          
-          return (
-            <div
-              key={index}
-              className={`notebook-grid-cell aspect-square text-3xl sm:text-4xl md:text-5xl font-${font} ${
-                isDotOrComma && !cell.subChar ? '!justify-start !items-end p-1' : ''
-              }`}
-            >
-              <span className={`notebook-text ${isDotOrComma && !cell.subChar ? 'translate-y-1' : ''}`}>
-                {cell.char}
-              </span>
-              {cell.subChar && (
-                <span className="absolute bottom-0 right-1 text-2xl font-bold leading-none">
-                  {cell.subChar}
-                </span>
-              )}
-            </div>
-          );
-        })}
-      </div>
+    <div className="w-full bg-white border-2 border-gray-800 overflow-hidden">
+      <table className="w-full table-fixed border-collapse">
+        <tbody>
+          {gridRows.map((row, rowIndex) => (
+            <tr key={rowIndex}>
+              {row.map((cell, colIndex) => {
+                const isLastCol = colIndex === row.length - 1;
+                const isLastRow = rowIndex === gridRows.length - 1;
+                const isDotOrComma = ['.', ','].includes(cell.char);
+
+                return (
+                  <td 
+                    key={colIndex}
+                    className={`
+                      p-0 align-bottom border-gray-300
+                      ${!isLastCol ? 'border-r' : ''}
+                      ${!isLastRow ? 'border-b' : ''}
+                    `}
+                  >
+                    <div className={`
+                      aspect-square w-full relative flex items-center justify-center
+                      text-3xl sm:text-4xl md:text-5xl font-${font}
+                      ${isDotOrComma && !cell.subChar ? '!justify-start !items-end p-1' : ''}
+                    `}>
+                      <span className={`notebook-text z-10 ${isDotOrComma && !cell.subChar ? 'translate-y-1' : ''}`}>
+                        {cell.char}
+                      </span>
+                      {cell.subChar && (
+                        <span className="absolute bottom-0 right-1 text-2xl font-bold leading-none z-10">
+                          {cell.subChar}
+                        </span>
+                      )}
+                      
+                      {/* Dotted midline guide - Optional, purely decorative */}
+                      <div className="absolute top-1/2 left-0 right-0 border-b border-gray-200 border-dashed pointer-events-none z-0 opacity-50"></div>
+                    </div>
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 };

@@ -2,8 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { WeatherType, GRID_COLS, FontFamily, FONT_OPTIONS } from './types';
 import WeatherSelector from './components/WeatherSelector';
 import GridNotebook from './components/GridNotebook';
-import { generateDiaryImage, generateDiarySpeech } from './services/geminiService';
-import { Pencil, Image as ImageIcon, Loader2, Save, Plus, Minus, Volume2, Eye, ArrowLeft, Type } from 'lucide-react';
+import { generateDiaryImage, streamDiarySpeech } from './services/geminiService';
+import { Pencil, Image as ImageIcon, Loader2, Save, Plus, Minus, Volume2, Eye, ArrowLeft, Type, BookOpen, X } from 'lucide-react';
 
 // Helper to decode base64 string
 function decode(base64: string) {
@@ -80,6 +80,7 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [rows, setRows] = useState<number>(5);
   const [isViewMode, setIsViewMode] = useState<boolean>(false);
+  const [isTwoPageMode, setIsTwoPageMode] = useState<boolean>(false);
   const [isFontMenuOpen, setIsFontMenuOpen] = useState<boolean>(false);
   
   const diaryRef = useRef<HTMLDivElement>(null);
@@ -186,39 +187,62 @@ const App: React.FC = () => {
 
   const handleSpeak = async () => {
     if (!content.trim()) return;
+    if (isPlayingAudio) return;
     
     setIsPlayingAudio(true);
     setError(null);
 
+    let audioContext: AudioContext | null = null;
+
     try {
       const textToSay = `${title ? title + '. ' : ''}${content}`;
-      const base64Audio = await generateDiarySpeech(textToSay);
+      const stream = streamDiarySpeech(textToSay);
 
-      if (base64Audio) {
-        const outputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({sampleRate: 24000});
-        const outputNode = outputAudioContext.createGain();
-        outputNode.connect(outputAudioContext.destination);
+      audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({sampleRate: 24000});
+      const outputNode = audioContext.createGain();
+      outputNode.connect(audioContext.destination);
+      
+      if (audioContext.state === 'suspended') {
+        await audioContext.resume();
+      }
 
+      let nextStartTime = audioContext.currentTime;
+      let sources: AudioBufferSourceNode[] = [];
+
+      for await (const chunkBase64 of stream) {
         const audioBuffer = await decodeAudioData(
-          decode(base64Audio),
-          outputAudioContext,
+          decode(chunkBase64),
+          audioContext,
           24000,
           1,
         );
         
-        const source = outputAudioContext.createBufferSource();
+        const source = audioContext.createBufferSource();
         source.buffer = audioBuffer;
         source.connect(outputNode);
-        source.start();
         
-        source.onended = () => setIsPlayingAudio(false);
-      } else {
-         throw new Error("No audio data");
+        const startTime = Math.max(nextStartTime, audioContext.currentTime);
+        source.start(startTime);
+        nextStartTime = startTime + audioBuffer.duration;
+        sources.push(source);
       }
+      
+      // When all chunks are scheduled, wait for the last one to finish
+      if (sources.length > 0) {
+        sources[sources.length - 1].onended = () => {
+          setIsPlayingAudio(false);
+          // Optional: close context to free resources
+          // audioContext?.close(); 
+        };
+      } else {
+        setIsPlayingAudio(false);
+      }
+      
     } catch (e) {
       console.error("Audio playback failed", e);
       setError("소리를 재생하는데 실패했어요.");
       setIsPlayingAudio(false);
+      audioContext?.close();
     }
   };
 
@@ -259,6 +283,70 @@ const App: React.FC = () => {
 
   return (
     <div className={`min-h-screen bg-yellow-50 py-8 px-4 font-${font}`}>
+      {/* Two Page View Modal */}
+      {isTwoPageMode && (
+        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4 sm:p-8 overflow-y-auto font-flower animate-in fade-in duration-300">
+          <div className="relative w-full max-w-7xl flex flex-col lg:flex-row shadow-2xl rounded-3xl overflow-hidden">
+            <button 
+              onClick={() => setIsTwoPageMode(false)}
+              className="absolute top-4 right-4 z-50 bg-black/50 hover:bg-black/70 text-white rounded-full p-2 transition-colors lg:fixed lg:top-8 lg:right-8 lg:p-3"
+            >
+              <X className="w-8 h-8 lg:w-10 lg:h-10" />
+            </button>
+
+            {/* Left Page - Image */}
+            <div className="flex-1 bg-[#fdfbf7] p-8 lg:p-12 min-h-[50vh] flex flex-col items-center justify-center border-b-2 lg:border-b-0 lg:border-r border-gray-200 relative">
+              {/* Spine shadow for left page */}
+              <div className="absolute right-0 top-0 bottom-0 w-12 bg-gradient-to-l from-black/5 to-transparent pointer-events-none hidden lg:block"></div>
+              
+              <div className="w-full h-full max-h-[80vh] border-8 border-white shadow-xl rotate-1 transition-transform hover:rotate-0 duration-500 bg-white">
+                  {generatedImage ? (
+                    <img src={generatedImage} alt="Diary" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full bg-gray-50 flex flex-col items-center justify-center text-gray-300 min-h-[300px]">
+                        <ImageIcon className="w-24 h-24 mb-4 opacity-30" />
+                        <span className="text-3xl font-bold opacity-50">그림이 없어요</span>
+                    </div>
+                  )}
+              </div>
+            </div>
+
+            {/* Right Page - Text */}
+            <div className="flex-1 bg-[#fdfbf7] p-8 lg:p-12 min-h-[50vh] relative">
+               {/* Spine shadow for right page */}
+               <div className="absolute left-0 top-0 bottom-0 w-12 bg-gradient-to-r from-black/5 to-transparent pointer-events-none hidden lg:block"></div>
+
+               <div className="h-full flex flex-col gap-8">
+                   {/* Header Info */}
+                   <div className="border-b-4 border-gray-800 pb-6">
+                       <div className="flex flex-wrap justify-between items-end border-b-2 border-gray-300 pb-4 mb-6 border-dashed gap-4">
+                          <div className="flex gap-3 items-end">
+                            <span className="text-2xl font-bold text-gray-500">날짜:</span>
+                            <span className={`text-3xl font-${font} text-gray-800`}>
+                              {date} <span className="text-2xl text-gray-500">({dayOfWeek})</span>
+                            </span>
+                          </div>
+                          <div className="flex gap-3 items-center">
+                             <span className="text-2xl font-bold text-gray-500">날씨:</span>
+                             <span className={`text-4xl font-${font} text-gray-800`}>{weather}</span>
+                          </div>
+                       </div>
+                       <div className="flex gap-3 items-end">
+                          <span className="text-3xl font-bold text-gray-500 whitespace-nowrap">제목:</span>
+                          <span className={`text-5xl text-gray-900 w-full truncate leading-none pb-1 font-${font}`}>{title}</span>
+                       </div>
+                   </div>
+
+                   {/* Grid */}
+                   <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
+                      <GridNotebook text={content} rows={Math.max(rows, 8)} font={font} />
+                   </div>
+               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Max width increased to 7xl to allow larger notebook */}
       <div className="max-w-7xl mx-auto flex flex-col gap-6">
         
@@ -302,9 +390,9 @@ const App: React.FC = () => {
                   <WeatherSelector selected={weather} onSelect={setWeather} />
                 </div>
 
-                <div className="flex gap-3 mb-6">
+                <div className="flex flex-col md:flex-row gap-3 mb-6">
                    {/* Font Picker Button with Popup */}
-                  <div className="relative flex-1">
+                  <div className="relative flex-1 w-full">
                     <button
                       onClick={() => setIsFontMenuOpen(!isFontMenuOpen)}
                       className="w-full py-3 bg-white text-teal-600 border-2 border-teal-200 rounded-2xl font-bold text-xl hover:bg-teal-50 transition-colors flex items-center justify-center gap-2 shadow-sm"
@@ -339,9 +427,16 @@ const App: React.FC = () => {
                   
                    <button
                     onClick={() => setIsViewMode(true)}
-                    className="flex-1 py-3 bg-white text-purple-600 border-2 border-purple-200 rounded-2xl font-bold text-xl hover:bg-purple-50 transition-colors flex items-center justify-center gap-2 shadow-sm"
+                    className="flex-1 w-full py-3 bg-white text-purple-600 border-2 border-purple-200 rounded-2xl font-bold text-xl hover:bg-purple-50 transition-colors flex items-center justify-center gap-2 shadow-sm"
                   >
-                     <Eye className="w-6 h-6" /> 📖 완성본 보기
+                     <Eye className="w-6 h-6" /> 📄 한 장 보기
+                  </button>
+
+                  <button
+                    onClick={() => setIsTwoPageMode(true)}
+                    className="flex-1 w-full py-3 bg-white text-indigo-600 border-2 border-indigo-200 rounded-2xl font-bold text-xl hover:bg-indigo-50 transition-colors flex items-center justify-center gap-2 shadow-sm"
+                  >
+                     <BookOpen className="w-6 h-6" /> 📖 두 쪽 보기
                   </button>
                 </div>
 

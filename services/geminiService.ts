@@ -10,28 +10,32 @@ export const generateDiaryImage = async (diaryText: string): Promise<string> => 
 
   try {
     // Prompt engineering for a "Talented 1st grader's crayon drawing" style
-    // Strongly enforcing human protagonist and NO TEXT
+    // Strongly enforcing human protagonist and NO TEXT with reinforced negative constraints
     const prompt = `
+      STRICT INSTRUCTION: GENERATE AN IMAGE ONLY. NO TEXT ALLOWED.
+
       Create a high-quality crayon drawing on white paper that looks like it was drawn by a talented 7-year-old elementary school student.
 
-      CRITICAL NEGATIVE CONSTRAINTS:
-      - ABSOLUTELY NO TEXT, NO WORDS, NO LETTERS, NO NUMBERS, and NO SPEECH BUBBLES.
-      - The drawing must be purely visual representation.
+      CRITICAL NEGATIVE CONSTRAINTS (MUST FOLLOW):
+      - ABSOLUTELY NO TEXT, NO WORDS, NO LETTERS, NO NUMBERS, and NO SYMBOLS.
+      - NO SPEECH BUBBLES or THOUGHT BUBBLES.
+      - NO SIGNATURES or WATERMARKS.
+      - If the context implies reading or writing (e.g., books, signs, screens), use squiggle lines or blank shapes to represent text. NEVER write legible characters.
+      
+      Visual Style:
+      - Art Style: High-quality, colorful, and neat crayon art on white textured paper.
+      - Technique: Vibrant primary colors, confident child-like strokes.
+      - Mood: Cheerful, innocent, bright, and heartwarming.
 
-      MANDATORY RULES FOR SUBJECT:
-      1. The MAIN CHARACTER must ALWAYS be a human child (a 7-year-old boy or girl).
-      2. NEVER draw an animal as the main protagonist. If the text mentions an animal (e.g., "My dog ran"), draw the CHILD playing with or watching the dog.
-      3. The child should be central to the scene.
+      Subject Rules:
+      1. Main Character: ALWAYS a human child (approx. 7 years old).
+      2. If animals are mentioned, the child must be present interacting with them.
+      3. Focus on the *scene* or *action* described, not the abstract concept.
 
-      Style details:
-      - Art Style: High-quality, colorful, and neat crayon art. Not messy scribbles, but a "masterpiece" by a gifted child.
-      - Technique: Use vibrant colors (primary colors), confident strokes, and fully filled-in coloring. 
-      - Mood: Cheerful, innocent, and bright.
-      - Background: Clean white drawing paper.
-
-      Diary Content to Visualize: "${diaryText}"
+      Scene Description to Draw: "${diaryText}"
     `;
 
+    // Reverting to gemini-2.5-flash-image as the previous fast model caused a 404 error
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
       contents: {
@@ -43,7 +47,7 @@ export const generateDiaryImage = async (diaryText: string): Promise<string> => 
       },
       config: {
         imageConfig: {
-          aspectRatio: "4:3", // Typical picture diary aspect ratio
+          aspectRatio: "4:3",
         }
       }
     });
@@ -89,6 +93,39 @@ export const generateDiarySpeech = async (text: string): Promise<string | undefi
     return response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
   } catch (error) {
     console.error("Error generating speech:", error);
+    throw error;
+  }
+};
+
+export const streamDiarySpeech = async function* (text: string): AsyncGenerator<string, void, unknown> {
+  if (!apiKey) {
+    throw new Error("API Key is missing.");
+  }
+
+  const voiceName = 'Zephyr';
+
+  try {
+    const responseStream = await ai.models.generateContentStream({
+      model: "gemini-2.5-flash-preview-tts",
+      contents: [{ parts: [{ text: text }] }],
+      config: {
+        responseModalities: [Modality.AUDIO],
+        speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: voiceName },
+            },
+        },
+      },
+    });
+
+    for await (const chunk of responseStream) {
+      const data = chunk.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      if (data) {
+        yield data;
+      }
+    }
+  } catch (error) {
+    console.error("Error streaming speech:", error);
     throw error;
   }
 };
