@@ -39,9 +39,18 @@ async function decodeAudioData(
 // Helper to calculate exact rows needed based on GridNotebook logic
 const calculateRequiredRows = (text: string) => {
   // Logic must match GridNotebook.tsx exactly
-  const cleanText = ' ' + text.replace(/\n/g, ' ').replace(/([.,!?])\s+/g, '$1');
+  const cleanText = ' ' + text
+    .replace(/\n/g, ' ')
+    .replace(/([.,!?])\s+/g, '$1') // Remove space after punctuation
+    .replace(/([“‘])\s+/g, '$1')   // Remove space after Opening Quote
+    .replace(/\s+([”’])/g, '$1');  // Remove space before Closing Quote
+
   let cellCount = 0;
   let textIndex = 0;
+  
+  const PUNCTUATION = ['.', ',', '!', '?'];
+  // Characters that should not start a new line
+  const FORBIDDEN_START_CHARS = [...PUNCTUATION, '”', '’', ')'];
 
   while (textIndex < cleanText.length) {
     const char = cleanText[textIndex];
@@ -53,11 +62,12 @@ const calculateRequiredRows = (text: string) => {
     }
 
     const nextChar = cleanText[textIndex + 1];
-    const isNextPunctuation = ['.', ',', '!', '?'].includes(nextChar);
     const isEndOfLine = (cellCount + 1) % GRID_COLS === 0;
+    const isNextForbiddenStart = FORBIDDEN_START_CHARS.includes(nextChar);
 
-    if (isEndOfLine && isNextPunctuation) {
-      cellCount++; // Squeeze 2 chars into 1 cell
+    // Logic: Only squeeze at the end of the line
+    if (isEndOfLine && isNextForbiddenStart) {
+      cellCount++; // Squeeze next char into this cell
       textIndex += 2;
     } else {
       cellCount++;
@@ -81,7 +91,6 @@ const App: React.FC = () => {
   const [rows, setRows] = useState<number>(5);
   const [isViewMode, setIsViewMode] = useState<boolean>(false);
   const [isTwoPageMode, setIsTwoPageMode] = useState<boolean>(false);
-  const [isFontMenuOpen, setIsFontMenuOpen] = useState<boolean>(false);
   
   const diaryRef = useRef<HTMLDivElement>(null);
 
@@ -281,6 +290,12 @@ const App: React.FC = () => {
     }
   };
 
+  const handleNextFont = () => {
+    const currentIndex = FONT_OPTIONS.findIndex(opt => opt.value === font);
+    const nextIndex = (currentIndex + 1) % FONT_OPTIONS.length;
+    setFont(FONT_OPTIONS[nextIndex].value);
+  };
+
   return (
     <div className={`min-h-screen bg-yellow-50 py-8 px-4 font-${font}`}>
       {/* Two Page View Modal */}
@@ -319,20 +334,20 @@ const App: React.FC = () => {
                <div className="h-full flex flex-col gap-8">
                    {/* Header Info */}
                    <div className="border-b-4 border-gray-800 pb-6">
-                       <div className="flex flex-wrap justify-between items-end border-b-2 border-gray-300 pb-4 mb-6 border-dashed gap-4">
-                          <div className="flex gap-3 items-end">
-                            <span className="text-2xl font-bold text-gray-500">날짜:</span>
-                            <span className={`text-3xl font-${font} text-gray-800`}>
+                       <div className="flex flex-wrap justify-between items-end border-b-2 border-gray-300 pb-3 mb-5 border-dashed gap-4">
+                          <div className="flex gap-2 items-end">
+                            <span className="text-2xl font-bold text-gray-500">🗓️ 날짜:</span>
+                            <span className={`text-3xl font-${font} text-gray-800 leading-none`}>
                               {date} <span className="text-2xl text-gray-500">({dayOfWeek})</span>
                             </span>
                           </div>
-                          <div className="flex gap-3 items-center">
-                             <span className="text-2xl font-bold text-gray-500">날씨:</span>
-                             <span className={`text-4xl font-${font} text-gray-800`}>{weather}</span>
+                          <div className="flex gap-2 items-center">
+                             <span className="text-2xl font-bold text-gray-500">🌈 날씨:</span>
+                             <span className={`text-3xl font-${font} text-gray-800 leading-none`}>{weather}</span>
                           </div>
                        </div>
                        <div className="flex gap-3 items-end">
-                          <span className="text-3xl font-bold text-gray-500 whitespace-nowrap">제목:</span>
+                          <span className="text-3xl font-bold text-gray-500 whitespace-nowrap">📛 제목:</span>
                           <span className={`text-5xl text-gray-900 w-full truncate leading-none pb-1 font-${font}`}>{title}</span>
                        </div>
                    </div>
@@ -359,20 +374,20 @@ const App: React.FC = () => {
                 <span className="whitespace-nowrap tracking-tight">나의 그림일기</span>
                 <span className="text-5xl drop-shadow-sm">🖍️</span>
               </div>
-              <span className="text-lg md:text-xl text-yellow-600 font-medium mt-2 md:mt-0 px-2">
-                 ✨ (하루 중 가장 기억에 남는 일을 써보세요!) ✨
+              <span className="text-xl md:text-2xl text-yellow-600 font-medium mt-2 md:mt-0 px-2">
+                 ✨ 하루 중 가장 기억에 남는 일을 써보세요!
               </span>
             </h1>
             <div className="flex flex-col gap-2 w-full md:w-auto">
-               <div className="flex items-center gap-2 bg-yellow-50 px-5 py-3 rounded-full border-2 border-yellow-200 justify-center shadow-inner">
-                <span className="font-bold text-xl text-gray-600 flex items-center gap-1">📅 날짜:</span>
+               <div className="flex items-center gap-3 bg-yellow-50 px-6 py-4 rounded-full border-2 border-yellow-200 justify-center shadow-inner">
+                <span className="font-bold text-2xl text-gray-600 flex items-center gap-1 whitespace-nowrap">📅 날짜:</span>
                 <input
                   type="date"
                   value={date}
                   onChange={(e) => setDate(e.target.value)}
-                  className={`font-bold text-xl bg-transparent border-none focus:ring-0 text-gray-800 cursor-pointer font-${font}`}
+                  className={`font-bold text-3xl bg-transparent border-none focus:ring-0 text-gray-800 cursor-pointer font-${font}`}
                 />
-                <span className={`font-bold text-xl text-gray-800 font-${font}`}>({dayOfWeek}요일)</span>
+                <span className={`font-bold text-2xl text-gray-800 font-${font} whitespace-nowrap`}>({dayOfWeek}요일)</span>
               </div>
             </div>
           </header>
@@ -391,45 +406,18 @@ const App: React.FC = () => {
                 </div>
 
                 <div className="flex flex-col md:flex-row gap-3 mb-6">
-                   {/* Font Picker Button with Popup */}
-                  <div className="relative flex-1 w-full">
-                    <button
-                      onClick={() => setIsFontMenuOpen(!isFontMenuOpen)}
-                      className="w-full py-3 bg-white text-teal-600 border-2 border-teal-200 rounded-2xl font-bold text-xl hover:bg-teal-50 transition-colors flex items-center justify-center gap-2 shadow-sm"
+                   <button
+                      onClick={handleNextFont}
+                      className={`flex-1 w-full py-3 bg-white text-teal-600 border-2 border-teal-200 rounded-2xl font-bold text-xl hover:bg-teal-50 transition-colors flex items-center justify-center gap-2 shadow-sm font-${font}`}
                     >
-                       <Type className="w-6 h-6" /> 🔡 글씨체
-                    </button>
-                    
-                    {isFontMenuOpen && (
-                      <div className="absolute top-full mt-2 left-0 right-0 bg-white border-4 border-teal-200 rounded-2xl shadow-2xl z-50 max-h-60 overflow-y-auto p-2">
-                        <div className="grid gap-2">
-                          {FONT_OPTIONS.map((option) => (
-                            <button
-                              key={option.value}
-                              onClick={() => {
-                                    setFont(option.value);
-                                    setIsFontMenuOpen(false);
-                                  }}
-                              className={`
-                                w-full text-left px-4 py-3 rounded-xl transition-colors font-bold text-xl flex items-center justify-between
-                                font-${option.value}
-                                ${font === option.value ? 'bg-teal-100 text-teal-800' : 'hover:bg-gray-100 text-gray-600'}
-                              `}
-                            >
-                              <span>{option.label}</span>
-                              {font === option.value && <span>✅</span>}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                       <Type className="w-6 h-6" /> 🔡 {FONT_OPTIONS.find(opt => opt.value === font)?.label}
+                   </button>
                   
                    <button
                     onClick={() => setIsViewMode(true)}
                     className="flex-1 w-full py-3 bg-white text-purple-600 border-2 border-purple-200 rounded-2xl font-bold text-xl hover:bg-purple-50 transition-colors flex items-center justify-center gap-2 shadow-sm"
                   >
-                     <Eye className="w-6 h-6" /> 📄 한 장 보기
+                     <Eye className="w-6 h-6" /> 📄 일기장만 보기
                   </button>
 
                   <button
@@ -450,16 +438,18 @@ const App: React.FC = () => {
                         value={title}
                         onChange={(e) => setTitle(e.target.value)}
                         placeholder="오늘 일기의 제목은 무엇인가요? 🤔"
-                        className={`w-full p-3 text-2xl border-2 border-blue-200 rounded-xl focus:ring-4 focus:ring-blue-100 focus:border-blue-300 font-${font} placeholder:text-blue-300`}
+                        className={`w-full p-3 text-4xl border-2 border-blue-200 rounded-xl focus:ring-4 focus:ring-blue-100 focus:border-blue-300 font-${font} placeholder:text-blue-300`}
                      />
                   </div>
 
                   <div className="bg-orange-50 p-4 rounded-2xl border border-orange-100">
-                    <label className="block text-xl font-bold text-orange-800 mb-2 flex items-center gap-2">
-                      <span>📝</span> 오늘의 이야기
-                    </label>
+                    <div className="flex justify-between items-center mb-2">
+                      <label className="text-xl font-bold text-orange-800 flex items-center gap-2">
+                        <span>📝</span> 오늘의 이야기
+                      </label>
+                    </div>
                     <textarea
-                      className={`w-full h-48 p-4 text-2xl border-2 border-orange-200 rounded-xl focus:ring-4 focus:ring-orange-100 focus:border-orange-300 resize-none font-${font} placeholder:text-orange-300 leading-relaxed`}
+                      className={`w-full h-80 p-4 text-4xl border-2 border-orange-200 rounded-xl focus:ring-4 focus:ring-orange-100 focus:border-orange-300 resize-none font-${font} placeholder:text-orange-300 leading-relaxed`}
                       placeholder={`여기에 일기를 써보세요.\n(재미있었던 일을 떠올려보세요!) 🎈\n\n칸에 맞춰서 써져요.`}
                       value={content}
                       onChange={handleContentChange}
@@ -576,20 +566,20 @@ const App: React.FC = () => {
 
                {/* Top Info Area - Increased sizes for Title and Date */}
                <div className="border-b-4 border-gray-800 p-8 bg-white">
-                 <div className="flex justify-between items-center border-b-2 border-gray-300 pb-4 mb-6 border-dashed">
-                    <div className="flex gap-4 items-end">
-                      <span className="text-2xl font-bold text-gray-600">날짜 :</span>
-                      <span className={`text-3xl font-${font} text-gray-800`}>
+                 <div className="flex flex-wrap justify-between items-end border-b-2 border-gray-300 pb-2 mb-4 border-dashed gap-2">
+                    <div className="flex gap-2 items-end">
+                      <span className="text-2xl font-bold text-gray-600 whitespace-nowrap">🗓️ 날짜 :</span>
+                      <span className={`text-3xl font-${font} text-gray-800 leading-none`}>
                         {date.split('-')[0]}년 {date.split('-')[1]}월 {date.split('-')[2]}일 <span className="text-2xl text-gray-600">({dayOfWeek}요일)</span>
                       </span>
                     </div>
-                    <div className="flex gap-4 items-center">
-                       <span className="text-2xl font-bold text-gray-600">날씨 :</span>
-                       <span className={`text-3xl font-${font} text-gray-800`}>{weather}</span>
+                    <div className="flex gap-2 items-center">
+                       <span className="text-2xl font-bold text-gray-600 whitespace-nowrap">🌈 날씨 :</span>
+                       <span className={`text-3xl font-${font} text-gray-800 leading-none`}>{weather}</span>
                     </div>
                  </div>
                  <div className="flex gap-4 items-end min-h-[3.5rem]">
-                    <span className="text-3xl font-bold text-gray-600 whitespace-nowrap">제목 :</span>
+                    <span className="text-3xl font-bold text-gray-600 whitespace-nowrap">📛 제목 :</span>
                     <span className={`text-5xl text-gray-900 w-full truncate leading-none pb-1 pl-2 font-${font}`}>{title}</span>
                  </div>
                </div>
