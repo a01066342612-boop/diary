@@ -3,15 +3,14 @@ import { GoogleGenAI, Modality } from "@google/genai";
 const apiKey = process.env.API_KEY || '';
 const ai = new GoogleGenAI({ apiKey });
 
-export const generateDiaryImage = async (diaryText: string): Promise<string> => {
+export const generateDiaryImage = async (diaryText: string, referenceImageBase64?: string): Promise<string> => {
   if (!apiKey) {
     throw new Error("API Key is missing.");
   }
 
   try {
     // Prompt engineering for a "Talented 1st grader's crayon drawing" style
-    // Strongly enforcing human protagonist and NO TEXT with reinforced negative constraints
-    const prompt = `
+    const systemPrompt = `
       STRICT INSTRUCTION: GENERATE AN IMAGE ONLY. NO TEXT ALLOWED.
 
       Create a high-quality crayon drawing on white paper that looks like it was drawn by a talented 7-year-old elementary school student.
@@ -30,20 +29,53 @@ export const generateDiaryImage = async (diaryText: string): Promise<string> => 
       Subject Rules:
       1. Main Character: ALWAYS a human child (approx. 7 years old).
       2. If animals are mentioned, the child must be present interacting with them.
-      3. Focus on the *scene* or *action* described, not the abstract concept.
-
-      Scene Description to Draw: "${diaryText}"
+      3. Focus on the *scene* or *action* described.
     `;
 
-    // Reverting to gemini-2.5-flash-image as the previous fast model caused a 404 error
+    const parts: any[] = [];
+    
+    // If a reference image is provided, add it to the parts
+    if (referenceImageBase64) {
+      // Safer parsing of Data URI without using Regex on huge strings to avoid Maximum call stack size exceeded
+      // Format is usually: data:image/png;base64,.....
+      const commaIndex = referenceImageBase64.indexOf(',');
+      
+      let mimeType = 'image/jpeg';
+      let data = referenceImageBase64;
+
+      if (commaIndex !== -1) {
+          const meta = referenceImageBase64.substring(0, commaIndex);
+          data = referenceImageBase64.substring(commaIndex + 1);
+          
+          // Extract mime type from meta (e.g., "data:image/png;base64")
+          const mimeMatch = meta.match(/:(.*?);/);
+          if (mimeMatch) {
+            mimeType = mimeMatch[1];
+          }
+      }
+
+      parts.push({
+        inlineData: {
+          mimeType: mimeType,
+          data: data
+        }
+      });
+      
+      // Instruction to use the reference image
+      parts.push({
+        text: systemPrompt + `\n\nINSTRUCTION: Transform the attached reference image into the crayon art style described above. Maintain the composition and main subjects of the reference image but render them as if drawn by a child with crayons.\n\nContext from diary: "${diaryText}"`
+      });
+    } else {
+      // Text only prompt
+      parts.push({
+        text: systemPrompt + `\n\nScene Description to Draw: "${diaryText}"`
+      });
+    }
+
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
       contents: {
-        parts: [
-          {
-            text: prompt,
-          },
-        ],
+        parts: parts,
       },
       config: {
         imageConfig: {

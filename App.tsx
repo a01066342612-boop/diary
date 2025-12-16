@@ -3,7 +3,7 @@ import { WeatherType, GRID_COLS, FontFamily, FONT_OPTIONS } from './types';
 import WeatherSelector from './components/WeatherSelector';
 import GridNotebook from './components/GridNotebook';
 import { generateDiaryImage, streamDiarySpeech } from './services/geminiService';
-import { Pencil, Image as ImageIcon, Loader2, Save, Plus, Minus, Volume2, Eye, ArrowLeft, Type, BookOpen, X } from 'lucide-react';
+import { Pencil, Image as ImageIcon, Loader2, Save, Plus, Minus, Volume2, Eye, ArrowLeft, Type, BookOpen, X, Camera, Trash2 } from 'lucide-react';
 
 // Helper to decode base64 string
 function decode(base64: string) {
@@ -85,6 +85,7 @@ const App: React.FC = () => {
   const [title, setTitle] = useState<string>('');
   const [content, setContent] = useState<string>('');
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
+  const [attachedImage, setAttachedImage] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -93,6 +94,7 @@ const App: React.FC = () => {
   const [isTwoPageMode, setIsTwoPageMode] = useState<boolean>(false);
   
   const diaryRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load data when date changes
   useEffect(() => {
@@ -105,6 +107,7 @@ const App: React.FC = () => {
         setWeather(parsed.weather || WeatherType.SUNNY);
         setFont(parsed.font || 'flower');
         setGeneratedImage(parsed.generatedImage || null);
+        setAttachedImage(parsed.attachedImage || null);
         
         // Recalculate rows based on loaded content
         if (parsed.content) {
@@ -121,27 +124,24 @@ const App: React.FC = () => {
       setContent('');
       setWeather(WeatherType.SUNNY);
       setGeneratedImage(null);
+      setAttachedImage(null);
       setRows(5);
-      // We keep the current font preference intentionally or reset it? 
-      // Let's keep the font as is for better UX, or reset to flower if strict per-day styling is needed.
-      // Resetting to default for new entries ensures consistency.
       setFont('flower'); 
     }
   }, [date]);
 
   // Auto-save when content changes
-  // Note: We exclude 'date' from dependency array to prevent saving old content to new date 
-  // during the split second where date changed but content hasn't updated yet.
   useEffect(() => {
     const dataToSave = {
       title,
       content,
       weather,
       font,
-      generatedImage
+      generatedImage,
+      attachedImage
     };
     localStorage.setItem(`diary_${date}`, JSON.stringify(dataToSave));
-  }, [title, content, weather, font, generatedImage]); // Intentionally omitting 'date'
+  }, [title, content, weather, font, generatedImage, attachedImage]);
 
   // Helper to get day of week
   const getDayOfWeek = (dateStr: string) => {
@@ -160,11 +160,8 @@ const App: React.FC = () => {
 
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newText = e.target.value;
-    
-    // Automatically calculate required rows based on exact text layout
     const requiredRows = calculateRequiredRows(newText);
     
-    // Update rows to fit content, respecting minimum of 5
     if (requiredRows !== rows) {
         setRows(requiredRows);
     }
@@ -172,9 +169,34 @@ const App: React.FC = () => {
     setContent(newText);
   };
 
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      // Basic validation for image type
+      if (!file.type.startsWith('image/')) {
+        setError("이미지 파일만 첨부할 수 있어요!");
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setAttachedImage(reader.result as string);
+        setError(null);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleRemoveAttachedImage = () => {
+    setAttachedImage(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
   const handleGenerateImage = async () => {
-    if (!content.trim()) {
-      setError("일기 내용을 먼저 적어주세요!");
+    if (!content.trim() && !attachedImage) {
+      setError("일기 내용을 적거나 사진을 첨부해주세요!");
       return;
     }
 
@@ -185,9 +207,11 @@ const App: React.FC = () => {
     try {
       // Pass both title and content for better context
       const prompt = title ? `Title: ${title}. ${content}` : content;
-      const imageUrl = await generateDiaryImage(prompt);
+      // Pass attachedImage (can be null)
+      const imageUrl = await generateDiaryImage(prompt, attachedImage || undefined);
       setGeneratedImage(imageUrl);
     } catch (err) {
+      console.error(err);
       setError("그림을 그리는데 실패했어요. 잠시 후 다시 시도해주세요.");
     } finally {
       setIsGenerating(false);
@@ -236,12 +260,9 @@ const App: React.FC = () => {
         sources.push(source);
       }
       
-      // When all chunks are scheduled, wait for the last one to finish
       if (sources.length > 0) {
         sources[sources.length - 1].onended = () => {
           setIsPlayingAudio(false);
-          // Optional: close context to free resources
-          // audioContext?.close(); 
         };
       } else {
         setIsPlayingAudio(false);
@@ -260,13 +281,12 @@ const App: React.FC = () => {
   };
 
   const handleRemoveLine = () => {
-    setRows(prev => Math.max(5, prev - 1)); // Ensure we don't go below minimum 5 when manually removing
+    setRows(prev => Math.max(5, prev - 1));
   };
 
   const handleSave = async () => {
     if (!diaryRef.current) return;
     
-    // Check if html2canvas is loaded
     if (typeof (window as any).html2canvas === 'undefined') {
       alert("저장 기능을 준비 중입니다. 잠시 후 다시 시도해주세요.");
       return;
@@ -274,9 +294,9 @@ const App: React.FC = () => {
 
     try {
       const canvas = await (window as any).html2canvas(diaryRef.current, {
-        scale: 2, // Higher quality
-        backgroundColor: '#fdfbf7', // Paper color
-        useCORS: true // Allow loading cross-origin images if any
+        scale: 2,
+        backgroundColor: '#fdfbf7',
+        useCORS: true 
       });
       
       const image = canvas.toDataURL("image/png");
@@ -311,7 +331,6 @@ const App: React.FC = () => {
 
             {/* Left Page - Image */}
             <div className="flex-1 bg-[#fdfbf7] p-8 lg:p-12 min-h-[50vh] flex flex-col items-center justify-center border-b-2 lg:border-b-0 lg:border-r border-gray-200 relative">
-              {/* Spine shadow for left page */}
               <div className="absolute right-0 top-0 bottom-0 w-12 bg-gradient-to-l from-black/5 to-transparent pointer-events-none hidden lg:block"></div>
               
               <div className="w-full h-full max-h-[80vh] border-8 border-white shadow-xl rotate-1 transition-transform hover:rotate-0 duration-500 bg-white">
@@ -328,11 +347,9 @@ const App: React.FC = () => {
 
             {/* Right Page - Text */}
             <div className="flex-1 bg-[#fdfbf7] p-8 lg:p-12 min-h-[50vh] relative">
-               {/* Spine shadow for right page */}
                <div className="absolute left-0 top-0 bottom-0 w-12 bg-gradient-to-r from-black/5 to-transparent pointer-events-none hidden lg:block"></div>
 
                <div className="h-full flex flex-col gap-8">
-                   {/* Header Info */}
                    <div className="border-b-4 border-gray-800 pb-6">
                        <div className="flex flex-wrap justify-between items-end border-b-2 border-gray-300 pb-3 mb-5 border-dashed gap-4">
                           <div className="flex gap-2 items-end">
@@ -352,7 +369,6 @@ const App: React.FC = () => {
                        </div>
                    </div>
 
-                   {/* Grid */}
                    <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
                       <GridNotebook text={content} rows={Math.max(rows, 8)} font={font} />
                    </div>
@@ -362,10 +378,8 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Max width increased to 7xl to allow larger notebook */}
       <div className="max-w-7xl mx-auto flex flex-col gap-6">
         
-        {/* Header Section - Hidden on Print */}
         {!isViewMode && (
           <header className="bg-white rounded-3xl shadow-xl p-6 border-4 border-yellow-300 border-dashed flex flex-col xl:flex-row items-center justify-between gap-6 no-print transform hover:scale-[1.01] transition-transform">
             <h1 className="text-2xl md:text-3xl font-bold text-yellow-900 flex flex-col md:flex-row items-center gap-2 text-center md:text-left">
@@ -393,10 +407,8 @@ const App: React.FC = () => {
           </header>
         )}
 
-        {/* Main Content Area */}
         <div className={`grid gap-6 ${isViewMode ? 'place-items-center' : 'lg:grid-cols-2'}`}>
           
-          {/* Controls Section - Hidden in View Mode & Print */}
           {!isViewMode && (
             <section className="space-y-6 no-print w-full">
                <div className="bg-white p-6 rounded-3xl shadow-xl border-2 border-yellow-200">
@@ -487,13 +499,52 @@ const App: React.FC = () => {
                   )}
 
                   <div className="pt-2 flex flex-col gap-3">
+                    {/* Image Attachment Preview */}
+                    {attachedImage && (
+                      <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-2xl border border-gray-200 animate-in fade-in slide-in-from-top-2">
+                        <div className="relative w-16 h-16 rounded-xl overflow-hidden border-2 border-white shadow-sm shrink-0">
+                           <img src={attachedImage} alt="Attached" className="w-full h-full object-cover" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                           <p className="text-sm font-bold text-gray-700 truncate">사진이 첨부되었어요!</p>
+                           <p className="text-xs text-gray-500">이 사진을 보고 그림을 그려요.</p>
+                        </div>
+                        <button 
+                          onClick={handleRemoveAttachedImage}
+                          className="p-2 bg-red-100 text-red-500 rounded-xl hover:bg-red-200 transition-colors"
+                          title="사진 삭제"
+                        >
+                          <Trash2 className="w-5 h-5" />
+                        </button>
+                      </div>
+                    )}
+
                     <div className="flex gap-3">
+                      {/* File Input */}
+                      <input 
+                        type="file" 
+                        ref={fileInputRef} 
+                        onChange={handleImageUpload} 
+                        accept="image/*" 
+                        className="hidden" 
+                      />
+                      
+                      {/* Attach Photo Button */}
+                      <button
+                         onClick={() => fileInputRef.current?.click()}
+                         className="px-4 bg-white text-gray-600 border-2 border-gray-300 rounded-2xl font-bold text-lg hover:bg-gray-50 transition-colors flex flex-col items-center justify-center gap-1 shadow-sm shrink-0 min-w-[5rem]"
+                         title="사진을 보고 그려줘요"
+                      >
+                         <Camera className="w-6 h-6" />
+                         <span className="text-sm">사진첨부</span>
+                      </button>
+
                       <button
                         onClick={handleGenerateImage}
-                        disabled={isGenerating || !content}
+                        disabled={isGenerating || (!content && !attachedImage)}
                         className={`
                           flex-1 py-4 rounded-2xl font-bold text-2xl text-white shadow-lg flex items-center justify-center gap-2 transition-all transform hover:-translate-y-1 active:translate-y-0
-                          ${isGenerating || !content ? 'bg-blue-300 cursor-not-allowed' : 'bg-gradient-to-r from-blue-400 to-blue-500 hover:from-blue-500 hover:to-blue-600'}
+                          ${isGenerating || (!content && !attachedImage) ? 'bg-blue-300 cursor-not-allowed' : 'bg-gradient-to-r from-blue-400 to-blue-500 hover:from-blue-500 hover:to-blue-600'}
                         `}
                       >
                         {isGenerating ? (
@@ -536,7 +587,6 @@ const App: React.FC = () => {
             </section>
           )}
 
-          {/* Preview Section (The "Notebook") */}
           <main className={`flex flex-col items-center w-full ${isViewMode ? 'justify-center' : ''}`}>
              
              {isViewMode && (
@@ -556,15 +606,12 @@ const App: React.FC = () => {
                 </div>
              )}
 
-             {/* This div is what we capture with html2canvas. Increased max-width for larger cells. */}
             <div 
               ref={diaryRef}
               className={`w-full max-w-5xl bg-paper shadow-2xl overflow-hidden relative print:shadow-none print:max-w-none print:w-[100%] font-${font}`}
             >
-               {/* Notebook Binding Effect - Hide in print if preferred, but nice to keep */}
                <div className="absolute left-0 top-0 bottom-0 w-6 bg-gradient-to-r from-gray-200/50 to-transparent z-10 pointer-events-none"></div>
 
-               {/* Top Info Area - Increased sizes for Title and Date */}
                <div className="border-b-4 border-gray-800 p-8 bg-white">
                  <div className="flex flex-wrap justify-between items-end border-b-2 border-gray-300 pb-2 mb-4 border-dashed gap-2">
                     <div className="flex gap-2 items-end">
@@ -584,7 +631,6 @@ const App: React.FC = () => {
                  </div>
                </div>
 
-              {/* Picture Area */}
               <div className="aspect-[4/3] w-full border-b-4 border-gray-800 bg-gray-50 flex items-center justify-center overflow-hidden relative group">
                 {generatedImage ? (
                   <img
@@ -602,7 +648,6 @@ const App: React.FC = () => {
                 )}
               </div>
 
-              {/* Grid Text Area */}
               <div className="p-6 bg-white min-h-[250px]">
                  <GridNotebook text={content} rows={rows} font={font} />
               </div>
